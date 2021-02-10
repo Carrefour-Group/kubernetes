@@ -35,9 +35,11 @@ func VerifyDryRun(gvk schema.GroupVersionKind, dynamicClient dynamic.Interface, 
 }
 
 func NewDryRunVerifier(dynamicClient dynamic.Interface, discoveryClient discovery.DiscoveryInterface) *DryRunVerifier {
+	document, _ := discoveryClient.OpenAPISchema()
+
 	return &DryRunVerifier{
-		finder:        NewCRDFinder(CRDFromDynamic(dynamicClient)),
-		openAPIGetter: discoveryClient,
+		finder:	NewCRDFinder(CRDFromDynamic(dynamicClient)),
+		oapi: 	document,
 	}
 }
 
@@ -71,21 +73,17 @@ func hasGVKExtension(extensions []*openapi_v2.NamedAny, gvk schema.GroupVersionK
 // delay the check for CRDs as much as possible though, since it
 // requires an extra round-trip to the server.
 type DryRunVerifier struct {
-	finder        CRDFinder
-	openAPIGetter discovery.OpenAPISchemaInterface
+	finder  CRDFinder
+	oapi 	*openapi_v2.Document
 }
 
 // HasSupport verifies if the given gvk supports DryRun. An error is
 // returned if it doesn't.
 func (v *DryRunVerifier) HasSupport(gvk schema.GroupVersionKind) error {
-	oapi, err := v.openAPIGetter.OpenAPISchema()
-	if err != nil {
-		return fmt.Errorf("failed to download openapi: %v", err)
-	}
-	supports, err := supportsDryRun(oapi, gvk)
+	supports, err := supportsDryRun(v.oapi, gvk)
 	if err != nil {
 		// We assume that we couldn't find the type, then check for namespace:
-		supports, _ = supportsDryRun(oapi, schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
+		supports, _ = supportsDryRun(v.oapi, schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
 		// If namespace supports dryRun, then we will support dryRun for CRDs only.
 		if supports {
 			supports, err = v.finder.HasCRD(gvk.GroupKind())
